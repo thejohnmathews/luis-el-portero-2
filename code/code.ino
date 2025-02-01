@@ -4,6 +4,7 @@
 // include libraries
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <Servo.h>
 #include "environment.h"
 
@@ -11,6 +12,7 @@
 const char* ssid = SSID;
 const char* password = PASSWORD;
 const char* serverURL = SERVERURL;
+const char* ssl = FINGERPRINT;
 
 // global variables - SG90
 Servo SG90;
@@ -37,53 +39,74 @@ void setup(){
   }
 
   // successful connection to WiFi
-  Serial.println("\n\nWi-Fi connected." + String(WiFi.localIP()) + "\n");
+  Serial.println("\n\nWi-Fi connected. Starting code execution.\n");
 }
 
 // code execution
-void loop() {
+void loop(){
   
-  // connect to server
   if (WiFi.status() == WL_CONNECTED){
 
-    // send a GET request to server
-    HTTPClient http;
-    http.begin(SERVERURL);
-    int http_response_code = http.GET();
+    WiFiClientSecure client;
 
-    // server responds with "trigger": true
-    if (http_response_code == 200){
+    // connect via SSL
+    if (!client.connect("johnmathews.tech", 443)){
 
-      String payload = http.getString();
+      Serial.println("SSL connection failed");
+      return;
+    }
+    
+    // verify SSL cert
+    if (!client.setFingerprint(FINGERPRINT)){ 
 
-      if (payload.indexOf("\"trigger\":true") >= 0){
+      Serial.println("SSL certificate verification failed");
+      return;
+    }
 
-        Serial.println("trigger received from server. activating SG90...");
+    Serial.println("SSL certificate verified!");
+    
+    // send GET request
+    client.print(String("GET /trigger.php HTTP/1.1\r\n") +
+                 "Host: johnmathews.tech\r\n" +
+                 "Connection: close\r\n\r\n");
 
-        // activate SG90 for button press
-        SG90.write(trigger_angle);
-        delay(5000);
-        SG90.write(normal_angle);
-        delay(5000);
+    // wait for response
+    long timeout = millis(); 
+    while (client.available() == 0) {
+      if (millis() - timeout > 5000) {
+        Serial.println(">>> Client Timeout !");
+        client.stop();
+        return;
       }
-
-      // close connection
-      http.end()
     }
-    // server responded with an error "trigger": false
-    else{
 
-      Serial.println("HTTP request failed. code: " + String(http_response_code));
+    // gather server response
+    String payload = "";
+    while (client.available()) payload += char(client.read());
+
+    Serial.println("Server response: " + payload);
+
+    // does the response contain the trigger?
+    if (payload.indexOf("\"trigger\":true") >= 0){
+
+      Serial.println("trigger received, activating servo...");
+      SG90.write(trigger_angle);  
+      delay(5000);                   
+      SG90.write(normal_angle);  
+      delay(5000);                   
     }
-  }
+
+    // close connection
+    client.stop();
+  } 
   else{
 
-    // regain connection to WiFi
-    Serial.println("WiFi not connected, retrying...");
-    WiFi.begin(SSID, PASSWORD);
+    // reconnect to WiFi
+    Serial.println("Wi-Fi not connected, retrying...");
+    WiFi.begin(ssid, password);
     delay(5000);
   }
 
-  // poll server every 5 seconds
-  delay(5000);
+  // poll every 5 seconds
+  delay(5000);  
 }
