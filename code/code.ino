@@ -11,8 +11,8 @@
 // global variables - SG90
 Servo SG90;
 const int SG90_signal = D4;
-const int normal_angle = 0;
-const int trigger_angle = 180;
+const int normal_angle = 180;
+const int trigger_angle = 100;
 
 // global variables
 WiFiClientSecure client;
@@ -77,7 +77,7 @@ void loop(){
     // send GET request to look at trigger's status
     client.print(String("GET /pages/trigger_status.txt HTTP/1.1\r\n") +
                   "Host: johnmathews.tech\r\n" +
-                  "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\n" +
+                  "User-Agent: " + USERAGENT + "\r\n" +
                   "Referer: https://johnmathews.tech\r\n" +
                   "Connection: keep-alive\r\n\r\n");
 
@@ -96,26 +96,29 @@ void loop(){
     String payload = "";
     while (client.available()) payload += char(client.read());
 
-    Serial.println("Server response: " + payload);
+    // check for invalid codes
+    if (payload.indexOf("200 OK") == -1){
 
-    // check for code 500 response
-    if (payload.indexOf("500 Internal Server Error") >= 0){
-      
-      Serial.println("Received 500 Internal Server Error, switching to backup server...");
+      Serial.println("The GET request had an error, restart operations...");
       client.stop();
+      delay(5000);
       break;  
     }
 
+    Serial.println("Server response: " + payload);
+
     // check if trigger is active
-    if (payload.indexOf("true") >= 0) {
-        Serial.println("Trigger received, activating servo...");
-        SG90.write(trigger_angle);
-        delay(5000);
-        SG90.write(normal_angle);
+    if (payload.indexOf("true") >= 0){
+
+      Serial.println("trigger received, activating SG90...");
+      SG90.write(trigger_angle);
+      delay(3500);
+      SG90.write(normal_angle);
+      Serial.println("SG90 returned to ready position...");
     }
 
-    // wait before polling again
-    delay(5000);
+    // wait 3s before polling again
+    delay(3000);
   } 
 
   // regain wifi and/or server connection if lost
