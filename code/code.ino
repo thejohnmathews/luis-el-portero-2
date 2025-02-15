@@ -57,6 +57,9 @@ void setup(){
   SG90.write(normal_angle);
   Serial.println("NodeMCU v3 powered on, initializing ...");
 
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+
+
   // connect to WiFi
   connect_wifi();
 
@@ -95,6 +98,7 @@ void loop(){
     // read response
     String payload = "";
     while (client.available()) payload += char(client.read());
+    Serial.println("Server response: " + payload);
 
     // check for invalid codes
     if (payload.indexOf("200 OK") == -1){
@@ -105,16 +109,21 @@ void loop(){
       break;  
     }
 
-    Serial.println("Server response: " + payload);
+    // extract unix time stamp
+    int pos = payload.lastIndexOf("\n");
+    if (pos >= 0) payload = payload.substring(pos + 1);
+    long triggerTime = payload.toInt();
 
-    // check if trigger is active
-    if (payload.indexOf("true") >= 0){
+    // if timestamp is recent enough, trigger door
+    if (time(nullptr) - triggerTime <= 7){
 
       Serial.println("trigger received, activating SG90...");
       SG90.write(trigger_angle);
       delay(3500);
       SG90.write(normal_angle);
       Serial.println("SG90 returned to ready position...");
+
+      delay(5000);
     }
 
     // wait 3s before polling again
